@@ -1,0 +1,243 @@
+---
+title: "Tawny Owl population trend Finland"
+output: html_notebook
+---
+
+```{r}
+rm(list=ls())
+
+library(dplyr)
+library(stats)
+library(ggplot2)
+library(car)
+library(lme4)
+library(blmeco)
+library(cowplot)
+library(gridExtra)
+library(visreg)
+library(MuMIn)
+library(data.table)
+library(patchwork)
+```
+
+
+```{r}
+data2<-read.table("C:/Users/giuse/Desktop/BIOLOGIA AMBIENTALE/II anno/Statistical Analysis/data/Owls_trend_new.csv",
+                  sep=";", header=T)
+glimpse(data2)
+summary(data2)
+```
+
+# Variable names:
+
+- breeding = number of breeding pairs
+- notbreeding = number of non-breeding pairs
+- n_terr = total number of territories (pairs)
+- prey_index_prev_aut = small mammal index
+- win_T_m = mean winter temperature
+- snw_days = number of snow days
+- tot_fledglings = number of total fledglings
+- mean_brood_size = mean brood size
+
+
+# Scale variables
+
+```{r}
+data2$Syear <- scale(data2$year, scale=TRUE, center=TRUE)
+data2$Sprey_index_prev_aut <- scale(data2$prey_index_prev_aut, scale=TRUE, center=TRUE)
+data2$Swin_T_m <- scale(data2$win_T_m, scale=TRUE, center=TRUE)
+data2$Ssnw_days <- scale(data2$snw_days, scale=TRUE, center=TRUE)
+```
+
+
+# TREND OF MEAN WINTER TEMPERATURE, SNOW DAYS AND SMALL MAMMAL ABUNDANCE OVER THE YEARS
+
+```{r}
+MOD1 <- lm(snw_days ~ year, data = data2)
+summary(MOD1)
+
+MOD2 <- lm(win_T_m ~ year, data = data2) 
+summary(MOD2)
+
+MOD3 <- lm(prey_index_prev_aut ~ Syear + I(Syear^2), data = data2)
+summary(MOD3) 
+```
+
+
+## POPULATION SIZE
+
+```{r}
+hist(data2$n_terr)
+POP <- lm(n_terr ~ Syear + Ssnw_days + Swin_T_m + Sprey_index_prev_aut, na.action = "na.fail", data = data2)
+summary(POP)
+vif(POP)
+
+MMI3 <- dredge(POP)
+sw(MMI3)
+MMI4 <- model.avg(MMI3) # to visualize list of candidate models
+summary(MMI4) # to visualize list of candidate models
+
+POP.best <- lm(n_terr ~ Sprey_index_prev_aut + Syear + Ssnw_days, data = data2)
+summary(POP.best)
+plot(POP.best)
+vif(POP.best)
+```
+
+## PROPORTION OF BREEDERS
+
+```{r}
+PROP <- glm(cbind(data2$breeding, data2$notbreeding) ~ Syear + Ssnw_days + Swin_T_m + Sprey_index_prev_aut, na.action = "na.fail", family = binomial, data = data2)
+summary(PROP)
+vif(PROP)
+
+MMI1 <- dredge(PROP)
+sw(MMI1)
+MMI2 <- model.avg(MMI1)
+summary(MMI2)
+
+PROP.best <- glm(cbind(data2$breeding, data2$notbreeding) ~ Syear + Swin_T_m + Sprey_index_prev_aut, family = binomial, data = data2)
+summary(PROP.best)
+plot(PROP.best)
+vif(PROP.best)
+with(summary(PROP.best), 1 - deviance/null.deviance)
+```
+
+
+## POPULATION PRODUCTIVITY 
+
+```{r}
+hist(data2$tot_fledglings)
+PROD_p <- glm(tot_fledglings ~ Sprey_index_prev_aut + Ssnw_days + Swin_T_m + Syear, family = "poisson", na.action = "na.fail", data = data2)
+summary(PROD_p) # overdispersion
+
+PROD <- glm.nb(tot_fledglings ~ Sprey_index_prev_aut + Ssnw_days + Swin_T_m + Syear, na.action = "na.fail", data = data2)
+summary(PROD)
+vif(PROD)
+
+MMI5 <- dredge(PROD)
+sw(MMI5)
+MMI6 <- model.avg(MMI5) 
+summary(MMI6)
+
+PROD.best <- glm.nb(tot_fledglings ~ Sprey_index_prev_aut + Swin_T_m + Syear, data = data2)
+summary(PROD.best)
+plot(PROD.best)
+vif(PROD.best)
+with(summary(PROD.best), 1 - deviance/null.deviance)
+```
+
+# Model for mean brood size
+
+```{r}
+hist(data2$mean_brood_size)
+broodsize <- lm(mean_brood_size ~ Sprey_index_prev_aut + Swin_T_m + Ssnw_days + Syear, data = data2)
+summary(broodsize)
+plot(broodsize)
+vif(broodsize)
+```
+
+
+## ALL FIGURES (plots)
+
+Figure 1
+
+```{r}
+g1 <- ggplot(data2, aes(x = year, y = snw_days)) + xlab("Year") + ylab("Snow days") + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + geom_line(lwd=0.5, col="black") + scale_x_continuous(breaks=seq(1980,2021,10)) +
+    geom_smooth(method=lm, se=FALSE, col='red', linetype="dotted", size=1)
+
+
+g2 <- ggplot(data2, aes(x = year, y = win_T_m)) + xlab("Year") + ylab("Winter T (°C)") + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + geom_line(lwd=0.5, col="black") + scale_x_continuous(breaks=seq(1980,2021,10)) +
+    geom_smooth(method=lm, se=FALSE, col='red', linetype="dotted", size=1)
+
+g3 <- ggplot(data2, aes(x = year, y = prey_index_prev_aut)) + xlab("Year") + ylab("SM abundance") + theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + geom_line(lwd=0.5, col="black") + scale_x_continuous(breaks=seq(1980,2021,10)) +
+    geom_smooth(method=lm, se=FALSE, col='red', linetype="dotted", size=1)
+
+
+plot1 <- ggdraw() +
+draw_plot(g1, x = 0, y = .5, width = .5, height = .5) +
+draw_plot(g2, x = .5, y = .5, width = .5, height = .5) +
+draw_plot(g3, x = .25, y = 0, width = .5, height = 0.5) +
+draw_plot_label(label = c("(a)", "(b)", "(c)"), size = 9, x = c(0, 0.5, 0.25), y = c(1, 1, 0.5)) 
+plot1
+
+ggsave("test.tiff", path = "C:/Users/giuse/Desktop/BIOLOGIA AMBIENTALE/II anno/Statistical Analysis/Statistical Analysis", width=200, height=100, units = "mm", dpi = 800)
+```
+
+Figure 3 (bar plots)
+
+```{r}
+bar1 <- ggplot(data=data2, aes(x=year)) +
+  geom_bar(aes(y=breeding), stat="identity", position ="identity", alpha=.2, fill='blue', color='black') +
+  geom_smooth(aes(x = year, y = breeding), method=lm, se=FALSE, col='blue', linetype="dotted", size=1) +
+  geom_bar(aes(y=notbreeding), stat="identity", position="identity", alpha=.3, fill='red', color='red4') +
+  geom_smooth(aes(x = year, y = notbreeding), method=lm, se=FALSE, col='red', linetype="dotted", size=1) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab("Year") + ylab("Population size (BR + NBR)")  + scale_y_continuous(name="Population size (BR + NBR)", limits=c(0, 60))
+bar1
+
+
+bar2 <- ggplot(data=data2, aes(x=year)) +
+  geom_bar(aes(y=tot_fledglings), stat="identity", position ="identity", fill='grey', color='black') +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  geom_smooth(aes(x = year, y = tot_fledglings), method=lm, se=FALSE, col='black', linetype="dotted", size=1) +
+  xlab("Year") + ylab("Population productivity") + scale_y_continuous(name="Population productivity", limits=c(0, 250))
+bar2
+
+
+plot3 <- ggdraw() +
+draw_plot(bar1, x = .25, y = .5, width = .5, height = .5) +
+draw_plot(bar2, x = .25, y = 0, width = .5, height = 0.5) +
+draw_plot_label(label = c("a)", "b)"), size = 11, x = c(0.23, 0.23), y = c(1, 0.5))
+plot3
+
+ggsave("test.tiff", path = "C:/Users/giuse/Desktop/BIOLOGIA AMBIENTALE/II anno/Statistical Analysis/Statistical Analysis", width=200, height=120, units = "mm", dpi = 1200)
+```
+
+Figure 2 and 4
+
+```{r}
+POP.best <- lm(n_terr ~ prey_index_prev_aut + year + snw_days, data = data2)
+
+popsize1 <- visreg(POP.best, "prey_index_prev_aut", rug=0, partial=TRUE, alpha = 0.05, gg=TRUE, xlab="SM abundance", ylab="Population size") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Population size", limits=c(0, 60))
+
+popsize2 <- visreg(POP.best, "snw_days", rug=0, partial=TRUE, alpha = 0.05, gg=TRUE, xlab="Snow days", ylab="Population size") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Population size", limits=c(0, 60))
+
+PROP.best <- glm(cbind(data2$breeding, data2$notbreeding) ~ year + win_T_m + prey_index_prev_aut, family = binomial, data = data2)
+
+prop1 <- visreg(PROP.best, "prey_index_prev_aut", rug=0, scale = "response", partial=TRUE, alpha = 0.05, gg=TRUE, xlab="SM abundance", ylab="Prop breeders") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Prop breeders", limits=c(0.00, 1.00))
+
+prop2 <- visreg(PROP.best, "win_T_m", rug=0, scale = "response", partial=TRUE, alpha = 0.05, gg=TRUE, xlab="Winter T (°C)", ylab="Prop breeders") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Prop breeders", limits=c(0.00, 1.00))
+
+PROD.best <- glm.nb(tot_fledglings ~ prey_index_prev_aut + win_T_m + year, data = data2)
+
+prod1 <- visreg(PROD.best, "prey_index_prev_aut", rug=0, scale = "response", partial=TRUE, alpha = 0.05, gg=TRUE, xlab="SM abundance", ylab="Population productivity") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Population productivity", limits=c(0, 250))
+
+prod2 <- visreg(PROD.best, "win_T_m", rug=0, scale = "response", partial=TRUE, alpha = 0.05, gg=TRUE, xlab="Winter T (°C)", ylab="Population productivity") + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_y_continuous(name="Population productivity", limits=c(0, 250))
+
+plot2 <- ggdraw() +
+draw_plot(popsize1, x = 0, y = .5, width = .5, height = .5) +
+draw_plot(prop1, x = .5, y = .5, width = .5, height = .5) +
+draw_plot(prod1, x = .25, y = 0, width = .5, height = 0.5) +
+draw_plot_label(label = c("a)", "b)", "c)"), size = 11, x = c(0, 0.5, 0.23), y = c(1, 1, 0.5))
+plot2
+
+ggsave("test.tiff", path = "C:/Users/giuse/Desktop/BIOLOGIA AMBIENTALE/II anno/Statistical Analysis/Statistical Analysis", width=200, height=120, units = "mm", dpi = 1200)
+
+plot4 <- ggdraw() +
+draw_plot(popsize2, x = 0, y = .5, width = .5, height = .5) +
+draw_plot(prop2, x = .5, y = .5, width = .5, height = .5) +
+draw_plot(prod2, x = .25, y = 0, width = .5, height = 0.5) +
+draw_plot_label(label = c("a)", "b)", "c)"), size = 11, x = c(0, 0.5, 0.23), y = c(1, 1, 0.5))
+plot4
+
+ggsave("test.tiff", path = "C:/Users/giuse/Desktop/BIOLOGIA AMBIENTALE/II anno/Statistical Analysis/Statistical Analysis", width=200, height=120, units = "mm", dpi = 1200)
+```
+
+
+
